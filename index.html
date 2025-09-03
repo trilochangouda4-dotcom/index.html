@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>InstaMini — Single File HTML + JS App</title>
+  <style>
+    :root{--accent:#ff3b6f;--muted:#666}
+    *{box-sizing:border-box}
+    body{font-family:Inter, system-ui, Arial; margin:0; background:#f6f6f8; color:#222}
+    header{background:white; padding:10px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 0 rgba(0,0,0,0.06)}
+    header h1{font-size:18px;margin:0;color:var(--accent)}
+    .container{max-width:980px;margin:18px auto;padding:0 12px}
+    .row{display:flex; gap:16px}
+    .col-2{flex:0 0 300px}
+    .col{flex:1}
+    .card{background:white;border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 6px 18px rgba(0,0,0,0.03)}
+    .msg{color:var(--muted);font-size:13px}
+    /* auth */
+    .box{max-width:420px;margin:32px auto}
+    input[type=text], input[type=password], textarea{width:100%;padding:10px;border:1px solid #e6e6e8;border-radius:8px;margin:6px 0}
+    button{background:var(--accent);color:white;border:0;padding:10px 12px;border-radius:8px;cursor:pointer}
+    .btn-ghost{background:transparent;color:var(--accent);border:1px solid #ffd0dd}
+    /* feed */
+    .post{border-radius:10px;overflow:hidden}
+    .post .meta{display:flex;align-items:center;padding:10px}
+    .avatar{width:40px;height:40px;border-radius:50%;background:#ddd;margin-right:10px}
+    .post img{display:block;width:100%;height:auto}
+    .post .actions{display:flex;gap:8px;padding:8px 10px}
+    .like-btn{background:none;border:0;font-size:18px;cursor:pointer}
+    .caption{padding:0 10px 10px}
+    .comments{padding:0 10px 10px}
+    .comment{font-size:14px;margin-top:6px}
+    /* small */
+    @media (max-width:800px){.row{flex-direction:column}.col-2{order:2}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>InstaMini</h1>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <button id="nav-feed" class="btn-ghost">Feed</button>
+      <button id="nav-upload">Upload</button>
+      <button id="nav-profile" class="btn-ghost">Profile</button>
+      <button id="nav-logout" class="btn-ghost">Logout</button>
+    </div>
+  </header>
+
+  <main class="container" id="app">
+    <!-- Auth box (login/register) -->
+    <div id="auth" class="box card" aria-hidden="true">
+      <h2 id="auth-title">Welcome — Sign in or Register</h2>
+      <input id="email" type="text" placeholder="Email" />
+      <input id="username" type="text" placeholder="Username (for register)" />
+      <input id="password" type="password" placeholder="Password" />
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="btn-login">Login</button>
+        <button id="btn-register" class="btn-ghost">Register</button>
+      </div>
+      <p class="msg">This demo stores everything locally in your browser (localStorage). Not for production.</p>
+    </div>
+
+    <!-- Main app view -->
+    <div id="main-app" style="display:none">
+      <div class="row">
+        <div class="col">
+          <div id="feed-container"></div>
+        </div>
+        <div class="col-2">
+          <div class="card">
+            <h3>Search users</h3>
+            <input id="search" type="text" placeholder="Search by username" />
+            <div id="search-results" style="margin-top:10px"></div>
+          </div>
+          <div class="card">
+            <h3>Your profile preview</h3>
+            <div id="profile-mini"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- upload area hidden, shown when clicking Upload nav -->
+      <div id="upload-area" style="display:none;margin-top:12px">
+        <div class="card">
+          <h3>New post</h3>
+          <input id="pick-file" type="file" accept="image/*" />
+          <textarea id="caption" placeholder="Write a caption..." rows="3"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="btn-post">Post</button>
+            <button id="btn-cancel-post" class="btn-ghost">Cancel</button>
+          </div>
+          <p id="upload-msg" class="msg"></p>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <script>
+    // Simple single-file Instagram-like app using localStorage as backend
+    // Data model in localStorage keys: 'im_users', 'im_posts', 'im_current'
+
+    // Utilities
+    const $ = (id)=>document.getElementById(id);
+    const now = ()=>Math.floor(Date.now()/1000);
+
+    // Load or initialize store
+    function loadStore(key, def){
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : def;
+    }
+    function saveStore(key, obj){ localStorage.setItem(key, JSON.stringify(obj)); }
+
+    let users = loadStore('im_users', {}); // map username -> user obj
+    let posts = loadStore('im_posts', {}); // map postId -> post obj
+    let current = loadStore('im_current', null); // username
+
+    // UI references
+    const authBox = $('auth');
+    const mainApp = $('main-app');
+    const feedContainer = $('feed-container');
+    const profileMini = $('profile-mini');
+    const uploadArea = $('upload-area');
+
+    // Navigation
+    $('nav-feed').onclick = ()=>showFeed();
+    $('nav-upload').onclick = ()=>showUpload();
+    $('nav-profile').onclick = ()=>showProfile();
+    $('nav-logout').onclick = ()=>logout();
+
+    // Auth actions
+    $('btn-register').onclick = ()=>{
+      const email = $('email').value.trim();
+      const usern = $('username').value.trim();
+      const pass = $('password').value;
+      if(!email || !usern || !pass){ alert('Fill email, username and password'); return; }
+      if(users[usern]){ alert('Username taken'); return; }
+      users[usern] = {username:usern,email:email,password:pass,joined:now(),bio:'',followers:[],following:[]};
+      saveStore('im_users', users);
+      setCurrent(usern);
+    };
+    $('btn-login').onclick = ()=>{
+      const usern = $('username').value.trim();
+      const pass = $('password').value;
+      if(!usern || !pass){ alert('Fill username and password'); return; }
+      const u = users[usern];
+      if(!u || u.password !== pass){ alert('Invalid credentials'); return; }
+      setCurrent(usern);
+    };
+
+    function setCurrent(username){
+      current = username;
+      saveStore('im_current', current);
+      renderApp();
+    }
+
+    function logout(){
+      current = null; saveStore('im_current', null); renderAuth();
+    }
+
+    // Initial rendering
+    function renderAuth(){ authBox.style.display='block'; mainApp.style.display='none'; uploadArea.style.display='none'; }
+    function renderApp(){ authBox.style.display='none'; mainApp.style.display='block'; uploadArea.style.display='none'; showFeed(); renderProfileMini(); }
+
+    if(current && users[current]) renderApp(); else renderAuth();
+
+    // Feed
+    function showFeed(){ uploadArea.style.display='none'; feedContainer.innerHTML='';
+      const list = Object.values(posts).sort((a,b)=>b.timestamp - a.timestamp);
+      if(list.length===0){ feedContainer.innerHTML='<div class="card msg">No posts yet — be the first to post!</div>'; return; }
+      list.forEach(p=>{ feedContainer.appendChild(postCard(p)); });
+    }
+
+    function postCard(p){
+      const wrap = document.createElement('div'); wrap.className='card post';
+      // meta
+      const meta = document.createElement('div'); meta.className='meta';
+      const av = document.createElement('div'); av.className='avatar'; av.title = p.author;
+      const user = document.createElement('div'); user.innerHTML=`<strong>${p.author}</strong> <div class="msg">${new Date(p.timestamp*1000).toLocaleString()}</div>`;
+      meta.appendChild(av); meta.appendChild(user);
+      wrap.appendChild(meta);
+      // image
+      if(p.image) { const img = document.createElement('img'); img.src = p.image; wrap.appendChild(img); }
+      // actions
+      const actions = document.createElement('div'); actions.className='actions';
+      const likeBtn = document.createElement('button'); likeBtn.className='like-btn'; likeBtn.innerText = (p.likes && p.likes.includes(current)) ? '♥ ' + (p.likes.length||0) : '♡ ' + ((p.likes&&p.likes.length)||0);
+      likeBtn.onclick = ()=>{ toggleLike(p.id); };
+      const commentBtn = document.createElement('button'); commentBtn.className='like-btn'; commentBtn.innerText = '💬 ' + ((p.comments && p.comments.length)||0);
+      commentBtn.onclick = ()=>{ promptComment(p.id); };
+      actions.appendChild(likeBtn); actions.appendChild(commentBtn);
+      wrap.appendChild(actions);
+      // caption
+      const cap = document.createElement('div'); cap.className='caption'; cap.innerHTML = `<strong>${p.author}</strong> ${escapeHtml(p.caption||'')}`;
+      wrap.appendChild(cap);
+      // comments
+      const cmts = document.createElement('div'); cmts.className='comments';
+      (p.comments||[]).slice(-3).forEach(c=>{ const cdiv = document.createElement('div'); cdiv.className='comment'; cdiv.innerHTML = `<strong>${c.author}</strong> ${escapeHtml(c.text)}`; cmts.appendChild(cdiv); });
+      wrap.appendChild(cmts);
+      return wrap;
+    }
+
+    function toggleLike(postId){ if(!current){ alert('Login to like'); return; } const p = posts[postId]; if(!p) return; p.likes = p.likes||[]; const idx = p.likes.indexOf(current); if(idx===-1) p.likes.push(current); else p.likes.splice(idx,1); posts[postId]=p; saveStore('im_posts', posts); showFeed(); }
+
+    function promptComment(postId){ if(!current){ alert('Login to comment'); return; } const txt = prompt('Write a comment'); if(!txt) return; const p = posts[postId]; p.comments = p.comments||[]; p.comments.push({author:current,text:txt,timestamp:now()}); posts[postId]=p; saveStore('im_posts', posts); showFeed(); }
+
+    // Upload
+    $('btn-post').onclick = async ()=>{
+      if(!current){ alert('Login to post'); return; }
+      const input = $('pick-file'); const file = input.files[0];
+      if(!file){ $('upload-msg').innerText='Pick an image first'; return; }
+      $('upload-msg').innerText='Preparing...';
+      const dataUrl = await fileToDataURL(file);
+      const caption = $('caption').value.trim();
+      const id = 'p'+Date.now();
+      posts[id] = {id:id,author:current,caption:caption,image:dataUrl,likes:[],comments:[],timestamp:now()};
+      saveStore('im_posts', posts);
+      $('upload-msg').innerText='Posted!';
+      $('caption').value=''; $('pick-file').value=''; showFeed(); renderProfileMini();
+    };
+    $('btn-cancel-post').onclick = ()=>{ $('upload-msg').innerText=''; $('caption').value=''; $('pick-file').value=''; uploadArea.style.display='none'; };
+
+    async function fileToDataURL(file){ return new Promise((res,rej)=>{ const r = new FileReader(); r.onload = ()=>res(r.result); r.onerror = rej; r.readAsDataURL(file); }); }
+
+    // Profile
+    function showProfile(){ uploadArea.style.display='none'; feedContainer.innerHTML=''; if(!current){ alert('Login first'); return; }
+      const u = users[current]; const div = document.createElement('div'); div.className='card'; div.innerHTML = `<h2>${u.username}</h2><p class="msg">${u.email}</p><p>${escapeHtml(u.bio||'')}</p><h3>Your posts</h3>`;
+      const your = Object.values(posts).filter(p=>p.author===current).sort((a,b)=>b.timestamp-a.timestamp);
+      if(your.length===0) div.innerHTML += '<p class="msg">No posts yet.</p>';
+      your.forEach(p=>{ div.appendChild(postCard(p)); });
+      feedContainer.appendChild(div);
+    }
+
+    function renderProfileMini(){ profileMini.innerHTML=''; if(!current){ profileMini.innerHTML='<p class="msg">Not logged in</p>'; return; } const u = users[current]; const el = document.createElement('div'); el.innerHTML = `<strong>${u.username}</strong><p class=\"msg\">Joined: ${new Date(u.joined*1000).toLocaleDateString()}</p>`; profileMini.appendChild(el); }
+
+    // Show upload area
+    function showUpload(){ if(!current){ alert('Login to upload'); return; } uploadArea.style.display = uploadArea.style.display === 'none' ? 'block' : 'none'; uploadArea.scrollIntoView({behavior:'smooth'}); }
+
+    // Search
+    $('search').oninput = function(){ const q = this.value.trim().toLowerCase(); const out = $('search-results'); out.innerHTML=''; if(!q) return; Object.keys(users).filter(u=>u.toLowerCase().includes(q)).slice(0,8).forEach(u=>{ const b = document.createElement('div'); b.style.padding='6px 0'; b.innerHTML = `<strong>${u}</strong> <button class=\"btn-ghost\" style=\"float:right\">View</button>`; b.querySelector('button').onclick = ()=>{ viewUser(u); }; out.appendChild(b); }); };
+
+    function viewUser(u){ if(!users[u]) return; feedContainer.innerHTML=''; const div = document.createElement('div'); div.className='card'; div.innerHTML=`<h2>${u}</h2><p class="msg">${users[u].email}</p>`;
+      const their = Object.values(posts).filter(p=>p.author===u).sort((a,b)=>b.timestamp-a.timestamp);
+      their.forEach(p=>div.appendChild(postCard(p)));
+      feedContainer.appendChild(div);
+    }
+
+    // Helpers
+    function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    // For first-time demo: seed sample user and post if empty
+    (function seed(){ if(Object.keys(users).length===0){ users['alice']={username:'alice',email:'alice@example.com',password:'1234',joined:now(),bio:'Hi I am Alice'}; users['bob']={username:'bob',email:'bob@example.com',password:'1234',joined:now(),bio:'Bob here'}; saveStore('im_users', users); }
+      if(Object.keys(posts).length===0){ const id='p'+Date.now(); posts[id]={id:id,author:'alice',caption:'Hello from InstaMini!',image:'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"><rect width="100%" height="100%" fill="%23ffdfe6"/><text x="50%" y="50%" alignment-baseline="middle" text-anchor="middle" font-size="28" fill="%23333">Sample post — upload your own images</text></svg>',likes:[],comments:[],timestamp:now()}; saveStore('im_posts', posts); }
+    })();
+
+    // Keyboard shortcuts for easier dev
+    document.addEventListener('keydown', (e)=>{ if(e.key==='/' && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA') { $('search').focus(); e.preventDefault(); } });
+  </script>
+</body>
+</html>
