@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InstaMini with Firebase Auth</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #fafafa; }
+    header { background: #fff; padding: 10px; text-align: center; border-bottom: 1px solid #ddd; }
+    #feed { max-width: 600px; margin: 20px auto; }
+    .post { background: #fff; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 10px; }
+    .post img { width: 100%; border-radius: 10px; }
+    .auth, .upload { max-width: 400px; margin: 20px auto; background: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 10px; }
+    input, button, textarea { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ccc; border-radius: 5px; }
+    button { background: #3897f0; color: white; border: none; cursor: pointer; }
+    .comments { margin-top: 10px; }
+    .comments p { margin: 5px 0; font-size: 14px; }
+    .actions { margin-top: 10px; }
+  </style>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script>
+    const firebaseConfig = {
+  apiKey: "AIzaSyBxY0do9AYlt9NSHEA0jvUAHhKiOhnctt0",
+  authDomain: "chatbot-bd1b4.firebaseapp.com",
+  projectId: "chatbot-bd1b4",
+  storageBucket: "chatbot-bd1b4.firebasestorage.app",
+  messagingSenderId: "178313205826",
+  appId: "1:178313205826:web:e4622b7f328e541ea775db",
+  measurementId: "G-Q217QD5HH9"
+};
+    firebase.initializeApp(firebaseConfig);
+  </script>
+</head>
+<body>
+  <header><h2>InstaMini</h2></header>
+
+  <div class="auth">
+    <h3>Sign Up</h3>
+    <input id="signupUser" placeholder="Email">
+    <input id="signupPass" placeholder="Password" type="password">
+    <button onclick="signup()">Sign Up</button>
+
+    <h3>Login</h3>
+    <input id="loginUser" placeholder="Email">
+    <input id="loginPass" placeholder="Password" type="password">
+    <button onclick="login()">Login</button>
+  </div>
+
+  <div class="upload" style="display:none">
+    <h3>Create Post</h3>
+    <input type="file" id="uploadImg" accept="image/*">
+    <textarea id="uploadCaption" placeholder="Write a caption..."></textarea>
+    <button onclick="uploadPost()">Upload</button>
+    <button onclick="logout()">Logout</button>
+  </div>
+
+  <div id="feed"></div>
+
+  <script>
+    let currentUser = null;
+
+    // Auth state listener (auto redirect after login/signup)
+    firebase.auth().onAuthStateChanged(user => {
+      if (user) {
+        currentUser = user;
+        document.querySelector('.auth').style.display = 'none';
+        document.querySelector('.upload').style.display = 'block';
+        listenPosts();
+      } else {
+        currentUser = null;
+        document.querySelector('.auth').style.display = 'block';
+        document.querySelector('.upload').style.display = 'none';
+        document.getElementById('feed').innerHTML = "";
+      }
+    });
+
+    // Signup
+    function signup() {
+      let email = document.getElementById('signupUser').value;
+      let pass = document.getElementById('signupPass').value;
+      firebase.auth().createUserWithEmailAndPassword(email, pass)
+        .then(() => alert("Signup successful!"))
+        .catch(err => alert("Signup failed: " + err.message));
+    }
+
+    // Login
+    function login() {
+      let email = document.getElementById('loginUser').value;
+      let pass = document.getElementById('loginPass').value;
+      firebase.auth().signInWithEmailAndPassword(email, pass)
+        .catch(err => alert("Login failed: " + err.message));
+    }
+
+    // Logout
+    function logout() {
+      firebase.auth().signOut();
+    }
+
+    // Upload Post
+    function uploadPost() {
+      let file = document.getElementById('uploadImg').files[0];
+      let caption = document.getElementById('uploadCaption').value;
+      if (!file) return alert("Select an image");
+      let reader = new FileReader();
+      reader.onload = function(e) {
+        let postId = Date.now();
+        firebase.database().ref("posts/" + postId).set({
+          uid: currentUser.uid,
+          username: currentUser.email,
+          image: e.target.result,
+          caption: caption,
+          likes: 0,
+          comments: []
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Like Post
+    function likePost(postId, currentLikes) {
+      firebase.database().ref("posts/" + postId + "/likes").set(currentLikes + 1);
+    }
+
+    // Add Comment
+    function addComment(postId) {
+      let commentText = document.getElementById("commentInput-" + postId).value;
+      if (!commentText) return;
+      let newComment = { user: currentUser.email, text: commentText };
+      firebase.database().ref("posts/" + postId + "/comments").once("value").then(snap => {
+        let comments = snap.val() || [];
+        comments.push(newComment);
+        firebase.database().ref("posts/" + postId + "/comments").set(comments);
+      });
+    }
+
+    // Delete Post
+    function deletePost(postId) {
+      if (confirm("Delete this post?")) {
+        firebase.database().ref("posts/" + postId).remove();
+      }
+    }
+
+    // Edit Post
+    function editPost(postId, oldCaption) {
+      let newCaption = prompt("Edit caption:", oldCaption);
+      if (newCaption !== null) {
+        firebase.database().ref("posts/" + postId + "/caption").set(newCaption);
+      }
+    }
+
+    // Realtime feed
+    function listenPosts() {
+      firebase.database().ref("posts").on("value", snap => {
+        let feed = document.getElementById('feed');
+        feed.innerHTML = "";
+        let posts = snap.val() || {};
+        Object.keys(posts).reverse().forEach(id => {
+          let post = posts[id];
+          let div = document.createElement('div');
+          div.className = 'post';
+
+          let commentsHtml = "";
+          if (post.comments) {
+            post.comments.forEach(c => {
+              commentsHtml += `<p><b>@${c.user}</b>: ${c.text}</p>`;
+            });
+          }
+
+          let ownerControls = "";
+          if (currentUser && post.uid === currentUser.uid) {
+            ownerControls = `
+              <button onclick="editPost('${id}','${post.caption}')">✏ Edit</button>
+              <button onclick="deletePost('${id}')">🗑 Delete</button>
+            `;
+          }
+
+          div.innerHTML = `
+            <h4>@${post.username}</h4>
+            <img src="${post.image}">
+            <p>${post.caption || ''}</p>
+            <div class="actions">
+              <button onclick="likePost('${id}', ${post.likes || 0})">❤ Like (${post.likes || 0})</button>
+              ${ownerControls}
+            </div>
+            <div class="comments">${commentsHtml}</div>
+            <input id="commentInput-${id}" placeholder="Add a comment...">
+            <button onclick="addComment('${id}')">Post</button>
+          `;
+          feed.appendChild(div);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
