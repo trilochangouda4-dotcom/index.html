@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>InstaMini with Timestamp</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background: #fafafa; }
+    .post { border: 1px solid #ccc; background: #fff; padding: 10px; margin-bottom: 10px; border-radius: 8px; }
+    .post small { color: #555; }
+  </style>
+</head>
+<body>
+  <h2>InstaMini Feed</h2>
+  <div id="feed"></div>
+
+  <script>
+    // TODO: Replace with your Firebase config
+    const firebaseConfig = {
+  apiKey: "AIzaSyBxY0do9AYlt9NSHEA0jvUAHhKiOhnctt0",
+  authDomain: "chatbot-bd1b4.firebaseapp.com",
+  projectId: "chatbot-bd1b4",
+  storageBucket: "chatbot-bd1b4.firebasestorage.app",
+  messagingSenderId: "178313205826",
+  appId: "1:178313205826:web:e4622b7f328e541ea775db",
+  measurementId: "G-Q217QD5HH9"
+};
+
+    firebase.initializeApp(firebaseConfig);
+
+    function formatDateTime(ms) {
+      if (!ms) return "";
+      const date = new Date(ms);
+      return date.toLocaleString();
+    }
+
+    const feed = document.getElementById("feed");
+    firebase.database().ref("posts").on("value", snapshot => {
+      feed.innerHTML = "";
+      const posts = snapshot.val();
+      if (!posts) return;
+      Object.keys(posts).reverse().forEach(key => {
+        const post = posts[key];
+        const div = document.createElement("div");
+        div.className = "post";
+        div.innerHTML = `
+          <p><strong>${post.uid}</strong></p>
+          <small>${formatDateTime(post.timestamp)}</small>
+          <p>${post.caption || ""}</p>
+        `;
+        feed.appendChild(div);
+      });
+    });
+
+    // Example function to create a post
+    function createPost(uid, caption) {
+      const timestamp = Date.now();
+      firebase.database().ref("posts").push({
+        uid: uid,
+        caption: caption,
+        timestamp: timestamp
+      });
+    }
+  </script>
+</body>
+</html>
