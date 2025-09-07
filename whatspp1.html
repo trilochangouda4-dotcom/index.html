@@ -83,11 +83,12 @@ const firebaseConfig = {
   authDomain: "chatbot-bd1b4.firebaseapp.com",
   databaseURL: "https://chatbot-bd1b4-default-rtdb.firebaseio.com",
   projectId: "chatbot-bd1b4",
-  storageBucket: "chatbot-bd1b4.firebasestorage.app",
+  storageBucket: "chatbot-bd1b4.appspot.com", // ✅ fixed here
   messagingSenderId: "178313205826",
   appId: "1:178313205826:web:e4622b7f328e541ea775db",
   measurementId: "G-Q217QD5HH9"
-};firebase.initializeApp(firebaseConfig);
+};
+firebase.initializeApp(firebaseConfig);
 
 const auth = firebase.auth();
 const db = firebase.database();
